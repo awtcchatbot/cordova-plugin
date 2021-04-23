@@ -23,7 +23,7 @@
 @property (strong, nonatomic) AVAudioEngine *audioEngine;
 @property (strong, nonatomic) SFSpeechAudioBufferRecognitionRequest *recognitionRequest;
 @property (strong, nonatomic) SFSpeechRecognitionTask *recognitionTask;
-
+@property (nonatomic) double lastSpeechDetected;
 @end
 
 
@@ -39,6 +39,35 @@
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (SFSpeechRecognitionTask*)recognitionTaskWithRequest:(SFSpeechRecognitionRequest*)request successHandler:(void (^)(NSArray* results))resultHandler failureHandler:(void (^)(NSError* error))failureHandler {
+    return [self.speechRecognizer recognitionTaskWithRequest:request resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
+        bool isFinal = false;
+        if ( result ) {
+            isFinal = result.isFinal;
+            NSMutableArray *resultArray = [[NSMutableArray alloc] init];
+            [resultArray addObject:result.bestTranscription.formattedString];
+            NSArray *transcriptions = [NSArray arrayWithArray:resultArray];
+
+            NSLog(@"startListening() recognitionTask result array: %@", transcriptions.description);
+            
+            resultHandler(transcriptions);
+        }
+        if ( error ) {
+            NSLog(@"startListening() recognitionTask error: %@", error.description);
+            [self.recognitionRequest endAudio];
+            self.recognitionRequest = nil;
+            self.recognitionTask = nil;
+
+            failureHandler(error);
+        }
+        if ( isFinal ) {
+            [self.recognitionRequest endAudio];
+            self.recognitionRequest = nil;
+            self.recognitionTask = nil;
+        }
+    }];
 }
 
 - (void)startListening:(CDVInvokedUrlCommand*)command {
@@ -67,10 +96,8 @@
         }
 
         NSString* language = [command argumentAtIndex:0 withDefault:DEFAULT_LANGUAGE];
-        int matches = [[command argumentAtIndex:1 withDefault:@(DEFAULT_MATCHES)] intValue];
-        BOOL showPartial = [[command argumentAtIndex:3 withDefault:@(NO)] boolValue];
-
         NSLocale *locale = [[NSLocale alloc] initWithLocaleIdentifier:language];
+        
         self.speechRecognizer = [[SFSpeechRecognizer alloc] initWithLocale:locale];
         self.audioEngine = [[AVAudioEngine alloc] init];
 
@@ -81,69 +108,56 @@
         }
 
         AVAudioSession *audioSession = [AVAudioSession sharedInstance];
-        [audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker error:nil];
-        [audioSession setMode:AVAudioSessionModeDefault error:nil];
+        [audioSession setCategory:AVAudioSessionCategoryPlayAndRecord error:nil];
+        [audioSession setMode:AVAudioSessionModeMeasurement error:nil];
         [audioSession setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
 
         self.recognitionRequest = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
-        self.recognitionRequest.shouldReportPartialResults = showPartial;
+        self.recognitionRequest.requiresOnDeviceRecognition = false;
+        self.recognitionRequest.shouldReportPartialResults = false;
 
         AVAudioInputNode *inputNode = self.audioEngine.inputNode;
         AVAudioFormat *format = [inputNode outputFormatForBus:0];
-
-        self.recognitionTask = [self.speechRecognizer recognitionTaskWithRequest:self.recognitionRequest resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
-
-            if ( result ) {
-
-                NSMutableArray *resultArray = [[NSMutableArray alloc] init];
-
-                int counter = 0;
-                for ( SFTranscription *transcription in result.transcriptions ) {
-                    if (matches > 0 && counter < matches) {
-                        [resultArray addObject:transcription.formattedString];
-                    }
-                    counter++;
-                }
-
-                NSArray *transcriptions = [NSArray arrayWithArray:resultArray];
-
-                NSLog(@"startListening() recognitionTask result array: %@", transcriptions.description);
-
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:transcriptions];
-                if (showPartial){
-                    [pluginResult setKeepCallbackAsBool:YES];
-                }
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-            }
-
-            if ( error ) {
-                NSLog(@"startListening() recognitionTask error: %@", error.description);
-
-                [self.audioEngine stop];
-                [self.audioEngine.inputNode removeTapOnBus:0];
-
-                self.recognitionRequest = nil;
-                self.recognitionTask = nil;
-
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
-                if (showPartial){
-                    [pluginResult setKeepCallbackAsBool:YES];
-                }
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-            }
-
-            if ( result.isFinal ) {
-                NSLog(@"startListening() recognitionTask isFinal");
-
-                [self.audioEngine stop];
-                [self.audioEngine.inputNode removeTapOnBus:0];
-
-                self.recognitionRequest = nil;
-                self.recognitionTask = nil;
-            }
-        }];
-
+        
+        void (^recognitionSuccessHandler)(NSArray*) = ^(NSArray *results){
+            NSLog(@"==>recognitionSuccessHandler results: %@", results[0]);
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:results];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        };
+        
+        void (^recognitionFailureHandler)(NSError*) = ^(NSError *error){
+            NSLog(@"==>recognitionFailureHandler results: %@", error.description);
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        };
+        
+        self.recognitionTask = [self recognitionTaskWithRequest:self.recognitionRequest successHandler: recognitionSuccessHandler failureHandler:recognitionFailureHandler];
+        self.lastSpeechDetected = -1.0;
+        
         [inputNode installTapOnBus:0 bufferSize:1024 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+            UInt32 frameLen = 1024;
+            buffer.frameLength = frameLen;
+            float volume = 100 + 20 * log10f(fabsf(*buffer.floatChannelData[0]));
+            //NSLog(@"Volume %f", volume);
+            double currentTime = [[[NSDate alloc] init] timeIntervalSince1970] * 1000;
+            if (volume > 60) {
+                self.lastSpeechDetected = currentTime;
+            }
+            
+            //NSLog(@"==>currentTime %f", currentTime - self.lastSpeechDetected);
+            if (self.lastSpeechDetected != -1 && (currentTime - self.lastSpeechDetected) > 1000) {
+                self.lastSpeechDetected = -1;
+                [[self recognitionTask] finish];
+            }
+            
+            if (self.recognitionRequest == nil) {
+                self.recognitionRequest = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
+                self.recognitionRequest.requiresOnDeviceRecognition = false;
+                self.recognitionRequest.shouldReportPartialResults = false;
+                self.recognitionTask = [self recognitionTaskWithRequest:self.recognitionRequest successHandler: recognitionSuccessHandler failureHandler:recognitionFailureHandler];
+            }
             [self.recognitionRequest appendAudioPCMBuffer:buffer];
         }];
 
@@ -151,7 +165,6 @@
         [self.audioEngine startAndReturnError:nil];
 
     }];
-
 }
 
 - (void)stopListening:(CDVInvokedUrlCommand*)command {
