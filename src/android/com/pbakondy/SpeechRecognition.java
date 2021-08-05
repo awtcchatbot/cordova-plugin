@@ -12,6 +12,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -69,7 +70,6 @@ public class SpeechRecognition extends CordovaPlugin {
     context = webView.getContext();
     view = webView.getView();
     audioManager = (AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
-
     view.post(new Runnable() {
       @Override
       public void run() {
@@ -79,6 +79,21 @@ public class SpeechRecognition extends CordovaPlugin {
       }
     });
   }
+
+    private boolean isAppOnForeground(Context context) {
+        ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        List<ActivityManager.RunningAppProcessInfo> appProcesses = activityManager.getRunningAppProcesses();
+        if (appProcesses == null) {
+            return false;
+        }
+        final String packageName = context.getPackageName();
+        for (ActivityManager.RunningAppProcessInfo appProcess : appProcesses) {
+            if (appProcess.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND && appProcess.processName.equals(packageName)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
   private void muteRecognition(Boolean mute) {
     if (audioManager != null) {
@@ -114,7 +129,12 @@ public class SpeechRecognition extends CordovaPlugin {
   }
 
   private void startRecognition() {
-    recognizer.startListening(recognizerIntent);
+    boolean isfg = isAppOnForeground(context);
+    if(isfg) {
+      recognizer.startListening(recognizerIntent);
+    }else{
+      muteRecognition(false);
+    }
   }
 
   @Override
@@ -172,6 +192,7 @@ public class SpeechRecognition extends CordovaPlugin {
             callbackContextStop.success();
           }
         });
+
         return true;
       }
 
@@ -310,7 +331,7 @@ public class SpeechRecognition extends CordovaPlugin {
     }
 
     private void destroyRecognizer() {
-      muteRecognition(false);
+      muteRecognition(true);
       recognizer.destroy();
     }
 
@@ -432,5 +453,4 @@ public class SpeechRecognition extends CordovaPlugin {
       return message;
     }
   }
-
 }
