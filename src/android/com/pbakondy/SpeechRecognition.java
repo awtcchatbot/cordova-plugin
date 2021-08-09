@@ -48,6 +48,7 @@ public class SpeechRecognition extends CordovaPlugin {
   private static final int MAX_RESULTS = 5;
   private static final String NOT_AVAILABLE = "Speech recognition service is not available on the system.";
   private static final String MISSING_PERMISSION = "Missing permission";
+  private static final String MUTE_RECOGNITION = "muteRecognition";
 
   private JSONArray mLastPartialResults = new JSONArray();
 
@@ -132,8 +133,6 @@ public class SpeechRecognition extends CordovaPlugin {
     boolean isfg = isAppOnForeground(context);
     if(isfg) {
       recognizer.startListening(recognizerIntent);
-    }else{
-      muteRecognition(false);
     }
   }
 
@@ -208,6 +207,12 @@ public class SpeechRecognition extends CordovaPlugin {
 
       if (REQUEST_PERMISSION.equals(action)) {
         requestAudioPermission();
+        return true;
+      }
+
+      if (MUTE_RECOGNITION.equals(action)) {
+        Boolean isMute = args.optBoolean(0, false);
+        muteRecognition(isMute);
         return true;
       }
 
@@ -331,7 +336,6 @@ public class SpeechRecognition extends CordovaPlugin {
     }
 
     private void destroyRecognizer() {
-      muteRecognition(true);
       recognizer.destroy();
     }
 
@@ -390,7 +394,6 @@ public class SpeechRecognition extends CordovaPlugin {
 
     @Override
     public void onReadyForSpeech(Bundle params) {
-      muteRecognition(true);
       Log.d(LOG_TAG, "onReadyForSpeech");
     }
 
