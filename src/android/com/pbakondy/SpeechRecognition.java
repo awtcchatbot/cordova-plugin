@@ -49,6 +49,7 @@ public class SpeechRecognition extends CordovaPlugin {
   private static final String NOT_AVAILABLE = "Speech recognition service is not available on the system.";
   private static final String MISSING_PERMISSION = "Missing permission";
   private static final String MUTE_RECOGNITION = "muteRecognition";
+  private static final String IS_APP_ON_FOREGROUND = "isAppOnForeground";
 
   private JSONArray mLastPartialResults = new JSONArray();
 
@@ -131,9 +132,23 @@ public class SpeechRecognition extends CordovaPlugin {
 
   private void startRecognition() {
     boolean isfg = isAppOnForeground(context);
+    muteRecognition(true);
     if(isfg) {
       recognizer.startListening(recognizerIntent);
     }
+  }
+
+  private void cancelRecognition() {
+      recognizer.cancel();
+    }
+
+  private void destroyRecognizer() {
+    recognizer.destroy();
+  }
+
+  private void createRecognizer() {
+    SpeechRecognitionListener listener = new SpeechRecognitionListener();
+    recognizer.setRecognitionListener(listener);
   }
 
   @Override
@@ -187,6 +202,8 @@ public class SpeechRecognition extends CordovaPlugin {
           public void run() {
             if(recognizer != null) {
               recognizer.stopListening();
+              destroyRecognizer();
+              createRecognizer();
             }
             callbackContextStop.success();
           }
@@ -331,19 +348,6 @@ public class SpeechRecognition extends CordovaPlugin {
     public void onEndOfSpeech() {
     }
 
-    private void cancelRecognition() {
-      recognizer.cancel();
-    }
-
-    private void destroyRecognizer() {
-      recognizer.destroy();
-    }
-
-    private void createRecognizer() {
-      SpeechRecognitionListener listener = new SpeechRecognitionListener();
-      recognizer.setRecognitionListener(listener);
-    }
-
     @Override
     public void onError(int errorCode) {
       String errorMessage = getErrorText(errorCode);
@@ -354,7 +358,6 @@ public class SpeechRecognition extends CordovaPlugin {
 
       switch (errorCode) {
         case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
-          cancelRecognition();
           break;
         case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
           destroyRecognizer();
@@ -363,7 +366,6 @@ public class SpeechRecognition extends CordovaPlugin {
         default:
           break;
       }
-      startRecognition();
     }
 
     @Override
