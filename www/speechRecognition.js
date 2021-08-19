@@ -18,7 +18,7 @@ module.exports = {
   requestPermission: function(successCallback, errorCallback) {
     cordova.exec(successCallback, errorCallback, 'SpeechRecognition', 'requestPermission', []);
   },
-  muteRecognition: function(successCallback, errorCallback) {
+  muteRecognition: function(successCallback, errorCallback, options) {
     cordova.exec(successCallback, errorCallback, 'SpeechRecognition', 'muteRecognition', [options.isMute]);
   }
 };
