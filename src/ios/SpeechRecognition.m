@@ -56,6 +56,7 @@
         }
         if ( error ) {
             NSLog(@"startListening() recognitionTask error: %@", error.description);
+            [self.audioEngine stop];
             [self.recognitionRequest endAudio];
             self.recognitionRequest = nil;
             self.recognitionTask = nil;
