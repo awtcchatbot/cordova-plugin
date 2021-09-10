@@ -73,7 +73,8 @@
 
 - (void)startListening:(CDVInvokedUrlCommand*)command {
     if ( self.audioEngine.isRunning ) {
-        [self stopListening: NULL];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:MESSAGE_ONGOING];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         return;
     }
 
