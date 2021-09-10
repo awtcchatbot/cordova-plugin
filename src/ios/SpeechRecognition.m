@@ -56,6 +56,7 @@
         }
         if ( error ) {
             NSLog(@"startListening() recognitionTask error: %@", error.description);
+            [self.audioEngine stop];
             [self.recognitionRequest endAudio];
             self.recognitionRequest = nil;
             self.recognitionTask = nil;
@@ -72,8 +73,7 @@
 
 - (void)startListening:(CDVInvokedUrlCommand*)command {
     if ( self.audioEngine.isRunning ) {
-        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:MESSAGE_ONGOING];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        [self stopListening: NULL];
         return;
     }
 
